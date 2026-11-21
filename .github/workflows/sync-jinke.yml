@@ -1,0 +1,44 @@
+name: Sync the public Jinke tutoring board
+on:
+  schedule:
+    - cron: '19,49 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+concurrency:
+  group: sync-jinke-mirror
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get and validate the public release
+        env:
+          SITE: https://jinke-tutor-board.kupars.chatgpt.site
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          curl -fsSL --retry 2 --max-time 30 "$SITE/api/board-line" -o "$tmpdir/line.json"
+          curl -fsSL --retry 2 --max-time 30 "$SITE/api/board-asset" -o "$tmpdir/board.js"
+          curl -fsSL --retry 2 --max-time 30 "$SITE/" -o "$tmpdir/index.html"
+          actual="sha256-$(openssl dgst -sha256 -binary "$tmpdir/board.js" | openssl base64 -A)"
+          jq -e --arg digest "$actual" '.service == "jinke-public-board" and .integrity == $digest' "$tmpdir/line.json" >/dev/null
+          grep -q 'jinke-public-board' "$tmpdir/index.html"
+          mkdir -p jinke
+          cp "$tmpdir/line.json" "$tmpdir/board.js" "$tmpdir/index.html" jinke/
+      - name: Publish only changed application files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git add -- jinke/index.html jinke/line.json jinke/board.js
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Sync the released Jinke board'
+          git push
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"

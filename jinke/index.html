@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#2463db"><meta name="description" content="按科目、区域、时间和时薪，找到适合自己的天津家教。"><title>津课家教 · 家教大厅</title>
+<style>body{margin:0;background:#f5f8fc;color:#182b42;font:16px/1.6 system-ui,sans-serif}.welcome{max-width:560px;margin:16vh auto;padding:24px}.welcome b{color:#2463db;font-size:24px}.welcome p{color:#56677a}.welcome a{color:#245cbd;margin-right:16px}.welcome button{border:1px solid #b5c9e3;border-radius:7px;background:white;color:#245cbd;padding:6px 14px;cursor:pointer}</style></head><body>
+<div id="root"><main class="welcome"><b>津课家教</b><p id="progress" role="status">正在读取家教列表并选择可用线路…</p><div id="recover" hidden><button onclick="location.reload()">重新连接</button> <a href="https://jinke-tutor-board.kupars.chatgpt.site/hall">打开原版大厅</a></div><noscript>请启用 JavaScript 浏览家教信息。</noscript></main></div>
+<script>
+(async function(){
+  const primary="https://jinke-tutor-board.kupars.chatgpt.site";
+  const github="https://kupars.github.io/jinke/";
+  const here=new URL("./",location.href).href;
+  const dev=["localhost","127.0.0.1"].includes(location.hostname);
+  const service=dev?location.origin:primary;
+  const candidates=[
+    {label:"主站线路",probe:service+"/api/board-line",bundle:service+"/api/board-asset"},
+    {label:"GitHub Pages",probe:github+"line.json",bundle:github+"board.js"},
+  ];
+  if(location.hostname.endsWith(".pages.dev"))candidates.push({label:"Cloudflare Pages",probe:here+"line.json",bundle:here+"board.js"});
+  async function read(url,timeout,cache="no-store"){
+    const c=new AbortController(),timer=setTimeout(()=>c.abort(),timeout);
+    try{const r=await fetch(url,{cache,credentials:"omit",signal:c.signal});if(!r.ok)throw Error();return await r.json()}finally{clearTimeout(timer)}
+  }
+  function script(src,integrity){
+    return new Promise((ok,fail)=>{const el=document.createElement("script");
+      const timer=setTimeout(()=>{el.remove();fail(Error("timeout"))},12000);
+      el.crossOrigin="anonymous";el.integrity=integrity;el.src=src;
+      el.onload=()=>{clearTimeout(timer);ok()};el.onerror=()=>{clearTimeout(timer);el.remove();fail(Error("load"))};
+      document.head.appendChild(el);
+    });
+  }
+  try{
+    const dataRequest=read(service+"/api/jobs",12000);
+    const checks=candidates.map(async line=>{
+      const check=await read(line.probe,4500);
+      if(check.service!=="jinke-public-board")throw Error();
+      const data=await dataRequest;
+      if(!data.integrity||check.integrity!==data.integrity)throw Error();
+      return line;
+    });
+    const first=Promise.any(checks).catch(()=>null);
+    const data=await dataRequest;
+    if(!Array.isArray(data.jobs)||!/^sha256-[A-Za-z0-9+/]{43}=$/.test(data.integrity))throw Error();
+    const fastest=await first;
+    // Only load code whose digest matches the version from the live database API.
+    const order=[...new Set([fastest,...candidates].filter(Boolean))];
+    for(const line of order){
+      window.jinkeBoard={jobs:data.jobs,service,line:line.label};
+      try{await script(line.bundle+"?v="+encodeURIComponent(data.integrity.slice(7,21)),data.integrity);return}catch{}
+    }
+    throw Error();
+  }catch{document.getElementById("progress").textContent="当前网络未能加载最新家教列表，请重试或切换入口。";document.getElementById("recover").hidden=false}
+})();
+</script></body></html>
