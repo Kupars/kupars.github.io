@@ -27,7 +27,16 @@
     });
   }
   try{
-    const dataRequest=read(service+"/api/jobs",12000);
+    const suitable=d=>Array.isArray(d.jobs)&&/^sha256-[A-Za-z0-9+/]{43}=$/.test(d.integrity);
+    const live=read(service+"/api/jobs",7000).then(d=>{if(!suitable(d))throw Error();return d});
+    // Give live vacancies priority. Read the index in parallel, then use it only if recent.
+    const snapshotURL=location.hostname.endsWith(".pages.dev")?here+"catalog.json":github+"catalog.json";
+    const fallback=read(snapshotURL,7000).then(async d=>{
+      const age=Date.now()-d.checkedAt;
+      if(!suitable(d)||d.service!=="jinke-public-board"||!Number.isFinite(age)||age< -300000||age>21600000)throw Error();
+      await new Promise(ok=>setTimeout(ok,2400));return d;
+    });
+    const dataRequest=Promise.any([live,fallback]);
     const checks=candidates.map(async line=>{
       const check=await read(line.probe,4500);
       if(check.service!=="jinke-public-board")throw Error();
@@ -42,10 +51,10 @@
     // Only load code whose digest matches the version from the live database API.
     const order=[...new Set([fastest,...candidates].filter(Boolean))];
     for(const line of order){
-      window.jinkeBoard={jobs:data.jobs,service,line:line.label};
+      window.jinkeBoard={jobs:data.jobs,checkedAt:data.checkedAt||0,service,line:line.label};
       try{await script(line.bundle+"?v="+encodeURIComponent(data.integrity.slice(7,21)),data.integrity);return}catch{}
     }
     throw Error();
   }catch{document.getElementById("progress").textContent="当前网络未能加载最新家教列表，请重试或切换入口。";document.getElementById("recover").hidden=false}
 })();
-</script></body></html>
+</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5dee4775cf04cb8',t:'MTc5NTI1NTY5OQ=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5dee4775cf04cb8',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>
